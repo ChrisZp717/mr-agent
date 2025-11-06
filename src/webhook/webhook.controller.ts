@@ -20,6 +20,8 @@ export class WebhookController {
   @Post('trigger')
   @UseInterceptors(AntDuplicateInterceptor)
   async trigger(@Body() body: MrRequestBody, @Headers() header: Record<string, string>) {
+    console.log('Webhook 触发请求');
+
     const gitlabToken = header['x-gitlab-token'] || '';
     const mode = (header['x-ai-mode'] || 'report') as 'report' | 'comment';
     const pushUrl = header['x-push-url'] || header['x-qwx-robot-url'] || '';

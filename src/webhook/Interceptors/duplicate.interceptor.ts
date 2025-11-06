@@ -14,6 +14,13 @@ export class AntDuplicateInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest();
     const { body } = req;
     const { object_attributes } = body;
+    
+    // 处理测试请求或无效请求
+    if (!object_attributes || !object_attributes.url) {
+      console.log('测试请求或无效请求，跳过重复检查');
+      return next.handle();
+    }
+    
     const key = object_attributes.url as string;
     const now = Date.now();
 

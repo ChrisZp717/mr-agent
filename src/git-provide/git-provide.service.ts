@@ -19,28 +19,36 @@ export class GitProvideService {
 
   private originDiffTokenCount = 0;
 
-  private gitlabHeaders: {
-    'PRIVATE-TOKEN': string;
-    'Content-Type': string;
-  };
+  private gitlabHeaders: Record<string, string>;
 
   constructor(mrRequestBody: MrRequestBody, config: Config) {
-    this.userName = mrRequestBody.user.username;
-    this.mrUrl = mrRequestBody.object_attributes.url;
-    this.commitMessage = mrRequestBody.object_attributes.title;
-    this.sourceBranch = mrRequestBody.object_attributes.source_branch;
-    this.targetBranch = mrRequestBody.object_attributes.target_branch;
-    this.projectName = mrRequestBody.project.name;
-    this.projectId = mrRequestBody.project.id;
-    this.mrId = mrRequestBody.object_attributes.iid;
+    this.userName = mrRequestBody.user?.username || 'unknown';
+    this.mrUrl = mrRequestBody.object_attributes?.url || '';
+    this.commitMessage = mrRequestBody.object_attributes?.title || '';
+    this.sourceBranch = mrRequestBody.object_attributes?.source_branch || '';
+    this.targetBranch = mrRequestBody.object_attributes?.target_branch || '';
+    this.projectName = mrRequestBody.project?.name || '';
+    this.projectId = mrRequestBody.project?.id || 0;
+    this.mrId = mrRequestBody.object_attributes?.iid || 0;
     this.baseUrl = config.baseUrl;
     this.gitlabToken = config.gitlabToken;
-    this.webUrl = mrRequestBody.project.web_url;
+    this.webUrl = mrRequestBody.project?.web_url || '';
+
+    // 针对极狐GitLab的特殊处理
+    const isJihulab = this.baseUrl.includes('jihulab.com');
 
     this.gitlabHeaders = {
       'PRIVATE-TOKEN': this.gitlabToken,
       'Content-Type': 'application/json',
     };
+
+    // 如果是极狐GitLab，可能需要使用不同的认证头
+    if (isJihulab) {
+      this.gitlabHeaders = {
+        Authorization: `Bearer ${this.gitlabToken}`,
+        'Content-Type': 'application/json',
+      };
+    }
   }
 
   getMrInfo() {
@@ -65,19 +73,15 @@ export class GitProvideService {
 
     this.filterNoCodeFile();
 
-    // const tasks = this.changes.map(async (change) => {
-    //   change.newFileContent = await this.getFileContent(
-    //     change.new_path,
-    //     this.targetBranch,
-    //   );
+    // 获取文件的实际内容，确保AI审查的是GitLab上的代码
+    const tasks = this.changes.map(async (change) => {
+      console.log(`开始获取文件内容: ${change.new_path} / ${change.old_path}`);
+      change.newFileContent = await this.getFileContent(change.new_path, this.targetBranch);
 
-    //   change.oldFileContent = await this.getFileContent(
-    //     change.old_path,
-    //     this.sourceBranch,
-    //   );
-    // });
+      change.oldFileContent = await this.getFileContent(change.old_path, this.sourceBranch);
+    });
 
-    // await Promise.all(tasks);
+    await Promise.all(tasks);
 
     return this.changes;
   }
@@ -89,6 +93,11 @@ export class GitProvideService {
     const { baseUrl, projectId, mrId, gitlabHeaders } = this;
     const url = `${baseUrl}/api/v4/projects/${encodeURIComponent(projectId)}/merge_requests/${mrId}/changes`;
 
+    console.log('GitLab API调用信息:');
+    console.log('项目ID:', projectId);
+    console.log('合并请求ID:', mrId);
+    console.log('API URL:', url);
+
     const res = await fetch(url, {
       headers: gitlabHeaders,
     });
@@ -96,6 +105,9 @@ export class GitProvideService {
     if (!res.ok) {
       const errorText = await res.text();
       console.error('API错误响应:', errorText);
+      console.error('请求URL:', url);
+      console.error('项目ID:', projectId, '类型:', typeof projectId);
+      console.error('合并请求ID:', mrId, '类型:', typeof mrId);
       throw new Error(`获取MR变更文件失败: ${res.status} ${res.statusText}`);
     }
 
